@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -5,6 +6,7 @@ import 'package:gal/gal.dart';
 import 'game_logic.dart';
 import 'l10n.dart';
 import 'models.dart';
+import 'score_service.dart';
 import 'settings.dart';
 
 class GameScreen extends StatefulWidget {
@@ -20,16 +22,21 @@ class _GameScreenState extends State<GameScreen> {
   bool _footerSad = false;
   GameMessage? _lastHandledMessage;
   final GlobalKey _captureKey = GlobalKey();
+  Timer? _uiTimer;
 
   @override
   void initState() {
     super.initState();
     game.addListener(_onChange);
     Settings.I.addListener(_onChange);
+    _uiTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted && game.isTimerRunning) setState(() {});
+    });
   }
 
   @override
   void dispose() {
+    _uiTimer?.cancel();
     game.removeListener(_onChange);
     Settings.I.removeListener(_onChange);
     game.dispose();
@@ -43,11 +50,14 @@ class _GameScreenState extends State<GameScreen> {
       if (!mounted) return;
       final toasts = game.drainToasts();
       if (toasts.isNotEmpty) {
-        setState(() => _toast = toasts.last);
-        Future.delayed(const Duration(milliseconds: 1800), () {
-          if (mounted && _toast == toasts.last) {
-            setState(() => _toast = null);
-          }
+        final latest = toasts.last;
+        setState(() => _toast = latest);
+        final isItemToast = latest.type == MessageType.itemOjo ||
+            latest.type == MessageType.itemCorrection ||
+            latest.type == MessageType.itemHades;
+        final toastMs = isItemToast ? 3800 : 1800;
+        Future.delayed(Duration(milliseconds: toastMs), () {
+          if (mounted && _toast == latest) setState(() => _toast = null);
         });
       }
       final msg = game.message;
@@ -64,10 +74,78 @@ class _GameScreenState extends State<GameScreen> {
     });
   }
 
+  Future<void> _checkAndSaveHighScore(int score) async {
+    if (score <= ScoreService.highScore) return;
+    final initials = await _showInitialsDialog(score);
+    if (initials != null && initials.trim().isNotEmpty) {
+      await ScoreService.save(score, initials.trim());
+    }
+  }
+
+  Future<void> _handleGameCompleted() async {
+    final score = game.sessionScore;
+    await _checkAndSaveHighScore(score);
+    game.restart();
+  }
+
+  Future<void> _handleBackNavigation() async {
+    await _checkAndSaveHighScore(game.sessionScore);
+    if (mounted) Navigator.of(context).pop();
+  }
+
+  Future<String?> _showInitialsDialog(int score) {
+    final lang = Settings.I.lang;
+    final controller = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: Text(L10n.t('new_record', lang),
+            style: const TextStyle(fontWeight: FontWeight.w900)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('${L10n.t('score', lang)}: $score',
+                style: const TextStyle(
+                    fontSize: 18, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 14),
+            TextField(
+              controller: controller,
+              maxLength: 4,
+              textCapitalization: TextCapitalization.characters,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                  fontSize: 22, fontWeight: FontWeight.w900, letterSpacing: 6),
+              decoration: InputDecoration(
+                hintText: L10n.t('enter_initials', lang),
+                counterText: '',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, null),
+            child: Text(L10n.t('cancel', lang)),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, controller.text),
+            child: Text(L10n.t('save_record', lang)),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final lang = Settings.I.lang;
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _handleBackNavigation();
+      },
+      child: Scaffold(
       body: Stack(
         fit: StackFit.expand,
         children: [
@@ -85,6 +163,7 @@ class _GameScreenState extends State<GameScreen> {
                       const SizedBox(height: 6),
                       _buildItemBar(lang),
                       Expanded(child: Center(child: _buildBoard())),
+                      _buildTimerRow(),
                       _buildFooter(),
                     ],
                   ),
@@ -96,7 +175,7 @@ class _GameScreenState extends State<GameScreen> {
           if (game.message != null) _buildFloatingMessage(game.message!, lang),
         ],
       ),
-    );
+    )); // Scaffold + PopScope
   }
 
   Widget _buildQuickMuteBar() {
@@ -104,8 +183,16 @@ class _GameScreenState extends State<GameScreen> {
       padding: const EdgeInsets.fromLTRB(10, 6, 10, 0),
       child: Row(
         children: [
-          if (Settings.I.showsMineCount) _buildPandoraCounter(),
+          if (Settings.I.showsMineCount) ...[
+            _buildPandoraCounter(),
+            const SizedBox(width: 8),
+          ],
+          _buildScoreDisplay(),
           const Spacer(),
+          if (ScoreService.highScore > 0) ...[
+            _buildHighScoreDisplay(),
+            const SizedBox(width: 8),
+          ],
           _muteButton(
             icon: Settings.I.musicOn ? Icons.music_note : Icons.music_off,
             active: Settings.I.musicOn,
@@ -118,6 +205,76 @@ class _GameScreenState extends State<GameScreen> {
             onTap: () => Settings.I.setSfxOn(!Settings.I.sfxOn),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildScoreDisplay() {
+    return _topChip(
+      icon: Icons.star_rounded,
+      iconColor: Colors.amber,
+      label: '${game.sessionScore}',
+    );
+  }
+
+  Widget _buildHighScoreDisplay() {
+    final initials = ScoreService.highScoreInitials;
+    final label = initials.isNotEmpty
+        ? '$initials ${ScoreService.highScore}'
+        : '${ScoreService.highScore}';
+    return _topChip(
+      icon: Icons.emoji_events_rounded,
+      iconColor: const Color(0xFFFFD54A),
+      label: label,
+    );
+  }
+
+  Widget _topChip({
+    required IconData icon,
+    required Color iconColor,
+    required String label,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.35),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.5), width: 1),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: iconColor, size: 16),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 13,
+              fontWeight: FontWeight.w900,
+              shadows: [
+                Shadow(color: Colors.black87, blurRadius: 2, offset: Offset(0, 1))
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTimerRow() {
+    if (game.firstClick && !game.gameOver) return const SizedBox.shrink();
+    final secs = game.levelElapsedSeconds;
+    final mm = (secs ~/ 60).toString().padLeft(2, '0');
+    final ss = (secs % 60).toString().padLeft(2, '0');
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Center(
+        child: _topChip(
+          icon: Icons.timer_outlined,
+          iconColor: Colors.white70,
+          label: '$mm:$ss',
+        ),
       ),
     );
   }
@@ -270,6 +427,7 @@ class _GameScreenState extends State<GameScreen> {
                   ? () => _confirmUseItem(
                         name: L10n.t('ojo', lang),
                         description: L10n.t('ojo_desc', lang),
+                        iconAsset: 'assets/images/Argos_eye.webp',
                         onUse: game.useOjoArgos,
                       )
                   : null,
@@ -283,6 +441,7 @@ class _GameScreenState extends State<GameScreen> {
                   ? () => _confirmUseItem(
                         name: L10n.t('correction', lang),
                         description: L10n.t('correction_desc', lang),
+                        iconAsset: 'assets/images/Atenea_correction.webp',
                         onUse: game.useCorreccion,
                       )
                   : null,
@@ -300,6 +459,7 @@ class _GameScreenState extends State<GameScreen> {
                     ? () => _confirmUseItem(
                           name: L10n.t('hades', lang),
                           description: L10n.t('hades_desc', lang),
+                          iconAsset: 'assets/images/hades.webp',
                           onUse: game.useHades,
                         )
                     : null,
@@ -359,6 +519,7 @@ class _GameScreenState extends State<GameScreen> {
   Future<void> _confirmUseItem({
     required String name,
     required String description,
+    required String iconAsset,
     required VoidCallback onUse,
   }) async {
     final lang = Settings.I.lang;
@@ -366,7 +527,14 @@ class _GameScreenState extends State<GameScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(name, style: const TextStyle(fontWeight: FontWeight.w900)),
-        content: Text(description),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Image.asset(iconAsset, height: 72),
+            const SizedBox(height: 12),
+            Text(description, textAlign: TextAlign.center),
+          ],
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -426,9 +594,9 @@ class _GameScreenState extends State<GameScreen> {
       }
     } else if (cell.content == CellContent.pandora) {
       bgAsset = 'assets/images/opened_tile.webp';
-      final isExploded =
-          game.gameOver && !game.won && game.lostRow == r && game.lostCol == c;
-      final pandoraAsset = isExploded
+      // On loss: flagged → closed box; unflagged (including exploded) → open box.
+      // Glow is handled separately via isLostCell below.
+      final pandoraAsset = (game.gameOver && !game.won && !cell.flagged)
           ? 'assets/images/box_opened.webp'
           : 'assets/images/box_closed.webp';
       inner = Padding(
@@ -536,7 +704,7 @@ class _GameScreenState extends State<GameScreen> {
         ],
       ),
     );
-    if (ok == true) game.restart();
+    if (ok == true) game.restartLevel();
   }
 
   Widget _buildFloatingMessage(GameMessage msg, Lang lang) {
@@ -557,14 +725,22 @@ class _GameScreenState extends State<GameScreen> {
                     _buildDialogBox(msg, lang),
                     Image.asset('assets/images/${msg.character}', height: 180),
                     const SizedBox(height: 14),
-                    if (game.gameOver && game.won)
+                    if (game.gameOver && game.won) ...[
+                      _buildWinScoreRow(lang),
+                      const SizedBox(height: 10),
                       _dialogButton(
-                        label: L10n.t('next', lang),
+                        label: L10n.t(
+                            game.isLastLevel ? 'finish' : 'next', lang),
                         onTap: () {
                           game.dismissMessage();
-                          game.nextLevel();
+                          if (game.isLastLevel) {
+                            _handleGameCompleted();
+                          } else {
+                            game.nextLevel();
+                          }
                         },
-                      )
+                      ),
+                    ]
                     else if (isLoss)
                       Column(
                         mainAxisSize: MainAxisSize.min,
@@ -627,6 +803,77 @@ class _GameScreenState extends State<GameScreen> {
         SnackBar(content: Text(L10n.t('saved_fail', lang))),
       );
     }
+  }
+
+  Widget _buildWinScoreRow(Lang lang) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.amber.withValues(alpha: 0.6), width: 1),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          _scoreChipInline(
+            icon: Icons.add_circle_outline,
+            color: Colors.greenAccent,
+            label: '+${game.levelScore}',
+            sublabel: L10n.t('level_score', lang),
+          ),
+          Container(
+            width: 1,
+            height: 32,
+            color: Colors.white30,
+            margin: const EdgeInsets.symmetric(horizontal: 14),
+          ),
+          _scoreChipInline(
+            icon: Icons.star_rounded,
+            color: Colors.amber,
+            label: '${game.sessionScore}',
+            sublabel: L10n.t('total_score', lang),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _scoreChipInline({
+    required IconData icon,
+    required Color color,
+    required String label,
+    required String sublabel,
+  }) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: color, size: 15),
+            const SizedBox(width: 4),
+            Text(label,
+                style: TextStyle(
+                    color: color,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                    shadows: const [
+                      Shadow(
+                          color: Colors.black87,
+                          blurRadius: 2,
+                          offset: Offset(0, 1))
+                    ])),
+          ],
+        ),
+        Text(sublabel,
+            style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 10,
+                fontWeight: FontWeight.w600)),
+      ],
+    );
   }
 
   Widget _buildDialogBox(GameMessage msg, Lang lang) {

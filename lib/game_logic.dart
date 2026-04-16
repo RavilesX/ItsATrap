@@ -49,7 +49,37 @@ class GameState extends ChangeNotifier {
   int? lostRow;
   int? lostCol;
 
+  // ── Scoring ──────────────────────────────────────────────────────────────
+  int sessionScore = 0;
+  int levelScore = 0; // score added on the most-recently completed level
+  bool gameCompleted = false;
+  int _levelItemsUsed = 0;
+  DateTime? _levelStartTime;
+  DateTime? _levelEndTime;
+
   bool get hadesArmed => _hadesShieldNext;
+  bool get isLastLevel => levelIndex >= _levels.length - 1;
+  bool get isTimerRunning => !firstClick && !gameOver;
+
+  int get levelElapsedSeconds {
+    if (_levelStartTime == null) return 0;
+    final end = _levelEndTime ?? DateTime.now();
+    return end.difference(_levelStartTime!).inSeconds;
+  }
+
+  int _computeLevelScore() {
+    int correctFlags = 0;
+    for (int r = 0; r < rows; r++) {
+      for (int c = 0; c < cols; c++) {
+        final cell = grid[r][c];
+        if (cell.flagged && cell.content == CellContent.pandora) correctFlags++;
+      }
+    }
+    final raw =
+        mineCount * 1000 + correctFlags * 1500 - _levelItemsUsed * 500;
+    final secs = max(1, levelElapsedSeconds);
+    return max(0, (raw / secs).floor());
+  }
 
   GameMessage? message;
 
@@ -100,6 +130,10 @@ class GameState extends ChangeNotifier {
     _hadesShieldNext = false;
     lostRow = null;
     lostCol = null;
+    _levelItemsUsed = 0;
+    _levelStartTime = null;
+    _levelEndTime = null;
+    levelScore = 0;
     _completedRows.clear();
     _completedCols.clear();
     message = null;
@@ -170,6 +204,7 @@ class GameState extends ChangeNotifier {
     if (firstClick) {
       _placeMines(r, c);
       firstClick = false;
+      _levelStartTime = DateTime.now();
     }
 
     if (_hadesShieldNext) {
@@ -235,6 +270,7 @@ class GameState extends ChangeNotifier {
 
     if (cell.content == CellContent.miopia) {
       cell.revealed = true;
+      _levelItemsUsed++;
       _shuffleMines();
       numbersDirty = true;
       AudioService.I.sfx('argos_myopia.mp3');
@@ -351,6 +387,7 @@ class GameState extends ChangeNotifier {
   void useHades() {
     if (gameOver || hadesCascos <= 0 || _hadesShieldNext) return;
     hadesCascos--;
+    _levelItemsUsed++;
     _hadesShieldNext = true;
     _toasts.add(const GameMessage(
       type: MessageType.hadesArmed,
@@ -450,6 +487,7 @@ class GameState extends ChangeNotifier {
   Future<void> useOjoArgos() async {
     if (gameOver || peeking || ojoArgos <= 0) return;
     ojoArgos--;
+    _levelItemsUsed++;
     peeking = true;
     for (int r = 0; r < rows; r++) {
       for (int c = 0; c < cols; c++) {
@@ -480,6 +518,7 @@ class GameState extends ChangeNotifier {
   void useCorreccion() {
     if (gameOver || correccion <= 0) return;
     correccion--;
+    _levelItemsUsed++;
     if (!numbersDirty) {
       final keys = [
         'correction_waste_1',
@@ -516,6 +555,10 @@ class GameState extends ChangeNotifier {
     }
     won = true;
     gameOver = true;
+    _levelEndTime = DateTime.now();
+    levelScore = _computeLevelScore();
+    sessionScore += levelScore;
+    if (isLastLevel) gameCompleted = true;
     message = const GameMessage(
       type: MessageType.levelWon,
       textKey: 'win_msg',
@@ -533,15 +576,28 @@ class GameState extends ChangeNotifier {
   }
 
   void nextLevel() {
-    if (!won) return;
+    if (!won || gameCompleted) return;
     levelIndex++;
     _setupLevel();
   }
 
+  /// Reinicia solo el nivel actual (botón restore). Conserva sessionScore y levelIndex.
+  void restartLevel() {
+    ojoArgos = 0;
+    correccion = 0;
+    hadesCascos = 0;
+    _setupLevel();
+  }
+
+  /// Reinicia el juego completo desde el nivel 1 (al salir o perder).
   void restart() {
     ojoArgos = 0;
     correccion = 0;
     hadesCascos = 0;
+    sessionScore = 0;
+    levelScore = 0;
+    gameCompleted = false;
+    levelIndex = 0;
     _setupLevel();
   }
 

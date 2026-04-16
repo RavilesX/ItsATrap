@@ -207,6 +207,17 @@ class L10n {
           'The Helm of Hades will shield your next click... but you will pay the price.'
     },
     'next': {Lang.es: 'Siguiente', Lang.en: 'Next'},
+    'finish': {Lang.es: 'Terminar', Lang.en: 'Finish'},
+    'score': {Lang.es: 'Puntaje', Lang.en: 'Score'},
+    'record': {Lang.es: 'Récord', Lang.en: 'Record'},
+    'new_record': {Lang.es: '¡Nuevo récord!', Lang.en: 'New record!'},
+    'enter_initials': {
+      Lang.es: 'Iniciales',
+      Lang.en: 'Initials'
+    },
+    'save_record': {Lang.es: 'Guardar', Lang.en: 'Save'},
+    'level_score': {Lang.es: 'Este nivel', Lang.en: 'This level'},
+    'total_score': {Lang.es: 'Total', Lang.en: 'Total'},
     'retry': {Lang.es: 'Reintentar', Lang.en: 'Retry'},
     'close': {Lang.es: 'Cerrar', Lang.en: 'Close'},
     'use': {Lang.es: 'Usar', Lang.en: 'Use'},
