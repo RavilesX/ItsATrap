@@ -222,8 +222,8 @@ class L10n {
     'close': {Lang.es: 'Cerrar', Lang.en: 'Close'},
     'use': {Lang.es: 'Usar', Lang.en: 'Use'},
     'ojo_desc': {
-      Lang.es: 'Revela todas las casillas seguras durante 2 segundos.',
-      Lang.en: 'Reveals all safe cells for 2 seconds.'
+      Lang.es: 'Revela todas las casillas durante 2 segundos.',
+      Lang.en: 'Reveals all cells for 2 seconds.'
     },
     'correction_desc': {
       Lang.es:
