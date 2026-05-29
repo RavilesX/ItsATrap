@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'audio_service.dart';
 import 'game_screen.dart';
@@ -34,6 +36,10 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
   @override
   Widget build(BuildContext context) {
     final lang = Settings.I.lang;
+    final screenHeight = MediaQuery.of(context).size.height;
+    final titleHeight = min(screenHeight * 0.14, 120.0);
+    final logoHeight = min(screenHeight * 0.35, 280.0);
+    final topPad = min(screenHeight * 0.025, 20.0);
     return Scaffold(
       body: Stack(
         fit: StackFit.expand,
@@ -42,20 +48,20 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
           SafeArea(
             child: Column(
               children: [
-                const SizedBox(height: 20),
+                SizedBox(height: topPad),
                 SizedBox(
-                  height: 120,
+                  height: titleHeight,
                   child: Image.asset(
                     'assets/images/title_${lang == Lang.es ? 'es' : 'en'}.webp',
                     fit: BoxFit.contain,
                   ),
                 ),
                 const Spacer(flex: 2),
-                Image.asset('assets/images/logo.webp', height: 312),
+                Image.asset('assets/images/logo.webp', height: logoHeight),
                 const SizedBox(height: 14),
-                _buildStartButton(lang),
+                _buildStartButton(context),
                 const Spacer(flex: 3),
-                _buildOptionsRow(),
+                _buildOptionsRow(context),
                 const SizedBox(height: 20),
               ],
             ),
@@ -65,7 +71,10 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
     );
   }
 
-  Widget _buildStartButton(Lang lang) {
+  Widget _buildStartButton(BuildContext context) {
+    final lang = Settings.I.lang;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final buttonWidth = min(screenWidth * 0.62, 240.0);
     return GestureDetector(
       onTap: () {
         Navigator.of(context).push(
@@ -75,7 +84,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
       child: Stack(
         alignment: Alignment.center,
         children: [
-          Image.asset('assets/images/main_button.webp', width: 240),
+          Image.asset('assets/images/main_button.webp', width: buttonWidth),
           Padding(
             padding: const EdgeInsets.only(bottom: 4),
             child: Text(
@@ -96,7 +105,10 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
     );
   }
 
-  Widget _buildOptionsRow() {
+  Widget _buildOptionsRow(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final iconSize = min(screenWidth * 0.12, 48.0);
+    final gap = min(screenWidth * 0.05, 20.0);
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
@@ -105,22 +117,29 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
               ? 'assets/images/spanish.webp'
               : 'assets/images/english.webp',
           onTap: Settings.I.toggleLang,
+          iconSize: iconSize,
         ),
-        const SizedBox(width: 20),
+        SizedBox(width: gap),
         _circleAsset(
           asset: 'assets/images/sound.webp',
           onTap: _openAudioSheet,
+          iconSize: iconSize,
         ),
-        const SizedBox(width: 20),
+        SizedBox(width: gap),
         _circleAsset(
           asset: 'assets/images/gear.webp',
           onTap: _openDifficultySheet,
+          iconSize: iconSize,
         ),
       ],
     );
   }
 
-  Widget _circleAsset({required String asset, required VoidCallback onTap}) {
+  Widget _circleAsset({
+    required String asset,
+    required VoidCallback onTap,
+    double iconSize = 48,
+  }) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -136,7 +155,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
             ),
           ],
         ),
-        child: Image.asset(asset, width: 48, height: 48),
+        child: Image.asset(asset, width: iconSize, height: iconSize),
       ),
     );
   }

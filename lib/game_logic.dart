@@ -52,13 +52,11 @@ class GameState extends ChangeNotifier {
   // ── Scoring ──────────────────────────────────────────────────────────────
   int sessionScore = 0;
   int levelScore = 0; // score added on the most-recently completed level
-  bool gameCompleted = false;
   int _levelItemsUsed = 0;
   DateTime? _levelStartTime;
   DateTime? _levelEndTime;
 
   bool get hadesArmed => _hadesShieldNext;
-  bool get isLastLevel => levelIndex >= _levels.length - 1;
   bool get isTimerRunning => !firstClick && !gameOver;
 
   int get levelElapsedSeconds {
@@ -558,7 +556,6 @@ class GameState extends ChangeNotifier {
     _levelEndTime = DateTime.now();
     levelScore = _computeLevelScore();
     sessionScore += levelScore;
-    if (isLastLevel) gameCompleted = true;
     message = const GameMessage(
       type: MessageType.levelWon,
       textKey: 'win_msg',
@@ -576,7 +573,9 @@ class GameState extends ChangeNotifier {
   }
 
   void nextLevel() {
-    if (!won || gameCompleted) return;
+    if (!won) return;
+    // Tras el último nivel se repite el último (config se topa con min()),
+    // acumulando puntos hasta que el usuario salga del juego.
     levelIndex++;
     _setupLevel();
   }
@@ -596,7 +595,6 @@ class GameState extends ChangeNotifier {
     hadesCascos = 0;
     sessionScore = 0;
     levelScore = 0;
-    gameCompleted = false;
     levelIndex = 0;
     _setupLevel();
   }

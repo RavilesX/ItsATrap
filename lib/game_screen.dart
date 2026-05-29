@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -80,12 +81,6 @@ class _GameScreenState extends State<GameScreen> {
     if (initials != null && initials.trim().isNotEmpty) {
       await ScoreService.save(score, initials.trim());
     }
-  }
-
-  Future<void> _handleGameCompleted() async {
-    final score = game.sessionScore;
-    await _checkAndSaveHighScore(score);
-    game.restart();
   }
 
   Future<void> _handleBackNavigation() async {
@@ -666,13 +661,20 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   Widget _buildFooter() {
+    final screenHeight = MediaQuery.of(context).size.height;
+    final restoreSize = min(screenHeight * 0.13, 120.0);
+    final ateneaHeight = min(screenHeight * 0.13, 110.0);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
       child: Row(
         children: [
           GestureDetector(
             onTap: _confirmRestart,
-            child: Image.asset('assets/images/restore.webp', width: 120, height: 120),
+            child: Image.asset(
+              'assets/images/restore.webp',
+              width: restoreSize,
+              height: restoreSize,
+            ),
           ),
           const Spacer(),
           Image.asset(
@@ -681,7 +683,7 @@ class _GameScreenState extends State<GameScreen> {
                 : _footerSad
                     ? 'assets/images/atenea_sad.webp'
                     : 'assets/images/atenea_idle.webp',
-            height: 110,
+            height: ateneaHeight,
           ),
         ],
       ),
@@ -709,6 +711,8 @@ class _GameScreenState extends State<GameScreen> {
 
   Widget _buildFloatingMessage(GameMessage msg, Lang lang) {
     final isLoss = game.gameOver && !game.won;
+    final screenHeight = MediaQuery.of(context).size.height;
+    final characterHeight = min(screenHeight * 0.22, 180.0);
     return Positioned.fill(
       child: GestureDetector(
         onTap: game.dismissMessage,
@@ -723,21 +727,16 @@ class _GameScreenState extends State<GameScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     _buildDialogBox(msg, lang),
-                    Image.asset('assets/images/${msg.character}', height: 180),
+                    Image.asset('assets/images/${msg.character}', height: characterHeight),
                     const SizedBox(height: 14),
                     if (game.gameOver && game.won) ...[
                       _buildWinScoreRow(lang),
                       const SizedBox(height: 10),
                       _dialogButton(
-                        label: L10n.t(
-                            game.isLastLevel ? 'finish' : 'next', lang),
+                        label: L10n.t('next', lang),
                         onTap: () {
                           game.dismissMessage();
-                          if (game.isLastLevel) {
-                            _handleGameCompleted();
-                          } else {
-                            game.nextLevel();
-                          }
+                          game.nextLevel();
                         },
                       ),
                     ]
@@ -877,8 +876,9 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   Widget _buildDialogBox(GameMessage msg, Lang lang) {
-    return SizedBox(
-      width: 320,
+    final screenWidth = MediaQuery.of(context).size.width;
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: min(320.0, screenWidth - 48)),
       child: Stack(
         alignment: Alignment.center,
         children: [
@@ -914,14 +914,19 @@ class _GameScreenState extends State<GameScreen> {
   Widget _dialogButton({
     required String label,
     required VoidCallback onTap,
-    double width = 180,
+    double? width,
   }) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final resolvedWidth = width != null
+        ? min(width, screenWidth * 0.42)
+        : min(screenWidth * 0.46, 180.0);
+    final isNarrow = resolvedWidth <= 150;
     return GestureDetector(
       onTap: onTap,
       child: Stack(
         alignment: Alignment.center,
         children: [
-          Image.asset('assets/images/main_button.webp', width: width),
+          Image.asset('assets/images/main_button.webp', width: resolvedWidth),
           Padding(
             padding: const EdgeInsets.only(bottom: 4),
             child: Text(
@@ -929,7 +934,7 @@ class _GameScreenState extends State<GameScreen> {
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: Colors.white,
-                fontSize: width <= 150 ? 14 : 17,
+                fontSize: isNarrow ? 14 : 17,
                 fontWeight: FontWeight.w900,
                 shadows: const [
                   Shadow(
@@ -946,8 +951,9 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   Widget _buildToast(GameMessage msg, Lang lang) {
+    final topInset = MediaQuery.of(context).padding.top;
     return Positioned(
-      top: 110,
+      top: topInset + 72,
       left: 20,
       right: 20,
       child: IgnorePointer(
